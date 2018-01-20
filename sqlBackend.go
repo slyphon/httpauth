@@ -55,12 +55,23 @@ func NewSqlAuthBackend(driverName, dataSourceName string) (b SqlAuthBackend, e e
 	if err != nil {
 		return b, mksqlerror(err.Error())
 	}
+}
+
+func NewSqlAuthBackendWithDBConn(db *sql.DB, isPostgres bool) (b SqlAuthBackend, e error) {
 	b.db = db
 	_, err = db.Exec(`create table if not exists goauth (Username varchar(255), Email varchar(255), Hash varchar(255), Role varchar(255), primary key (Username))`)
 	if err != nil {
 		return b, mksqlerror(err.Error())
 	}
 
+	if err := setupPreparedStmts(&b, db, isPostgres); err != nil {
+		return b, err
+	}
+
+	return b, nil
+}
+
+func setupPreparedStmts(b *SqlAuthBackend, db *sql.DB, isPostgres bool) (err error) {
 	// prepare statements for concurrent use and better preformance
 	//
 	// NOTE:
@@ -69,51 +80,49 @@ func NewSqlAuthBackend(driverName, dataSourceName string) (b SqlAuthBackend, e e
 	// lowercases all these column names.
 	//
 	// Thanks to mjhall for letting me know about this.
-	if driverName == "postgres" {
+	if isPostgres {
 		b.userStmt, err = db.Prepare(`select Email, Hash, Role from goauth where Username = $1`)
 		if err != nil {
-			return b, mksqlerror(fmt.Sprintf("userstmt: %v", err))
+			return mksqlerror(fmt.Sprintf("userstmt: %v", err))
 		}
 		b.usersStmt, err = db.Prepare(`select Username, Email, Hash, Role from goauth`)
 		if err != nil {
-			return b, mksqlerror(fmt.Sprintf("usersstmt: %v", err))
+			return mksqlerror(fmt.Sprintf("usersstmt: %v", err))
 		}
 		b.insertStmt, err = db.Prepare(`insert into goauth (Username, Email, Hash, Role) values ($1, $2, $3, $4)`)
 		if err != nil {
-			return b, mksqlerror(fmt.Sprintf("insertstmt: %v", err))
+			return mksqlerror(fmt.Sprintf("insertstmt: %v", err))
 		}
 		b.updateStmt, err = db.Prepare(`update goauth set Email = $1, Hash = $2, Role = $3 where Username = $4`)
 		if err != nil {
-			return b, mksqlerror(fmt.Sprintf("updatestmt: %v", err))
+			return mksqlerror(fmt.Sprintf("updatestmt: %v", err))
 		}
 		b.deleteStmt, err = db.Prepare(`delete from goauth where Username = $1`)
 		if err != nil {
-			return b, mksqlerror(fmt.Sprintf("deletestmt: %v", err))
+			return mksqlerror(fmt.Sprintf("deletestmt: %v", err))
 		}
 	} else {
 		b.userStmt, err = db.Prepare(`select Email, Hash, Role from goauth where Username = ?`)
 		if err != nil {
-			return b, mksqlerror(fmt.Sprintf("userstmt: %v", err))
+			return mksqlerror(fmt.Sprintf("userstmt: %v", err))
 		}
 		b.usersStmt, err = db.Prepare(`select Username, Email, Hash, Role from goauth`)
 		if err != nil {
-			return b, mksqlerror(fmt.Sprintf("usersstmt: %v", err))
+			return mksqlerror(fmt.Sprintf("usersstmt: %v", err))
 		}
 		b.insertStmt, err = db.Prepare(`insert into goauth (Username, Email, Hash, Role) values (?, ?, ?, ?)`)
 		if err != nil {
-			return b, mksqlerror(fmt.Sprintf("insertstmt: %v", err))
+			return mksqlerror(fmt.Sprintf("insertstmt: %v", err))
 		}
 		b.updateStmt, err = db.Prepare(`update goauth set Email = ?, Hash = ?, Role = ? where Username = ?`)
 		if err != nil {
-			return b, mksqlerror(fmt.Sprintf("updatestmt: %v", err))
+			return mksqlerror(fmt.Sprintf("updatestmt: %v", err))
 		}
 		b.deleteStmt, err = db.Prepare(`delete from goauth where Username = ?`)
 		if err != nil {
-			return b, mksqlerror(fmt.Sprintf("deletestmt: %v", err))
+			return mksqlerror(fmt.Sprintf("deletestmt: %v", err))
 		}
 	}
-
-	return b, nil
 }
 
 // User returns the user with the given username. Error is set to
@@ -179,10 +188,10 @@ func (b SqlAuthBackend) DeleteUser(username string) error {
 
 // Close cleans up the backend by terminating the database connection.
 func (b SqlAuthBackend) Close() {
-	b.db.Close()
 	b.userStmt.Close()
 	b.usersStmt.Close()
 	b.insertStmt.Close()
 	b.updateStmt.Close()
 	b.deleteStmt.Close()
+	b.db.Close()
 }

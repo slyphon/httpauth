@@ -55,9 +55,11 @@ func NewSqlAuthBackend(driverName, dataSourceName string) (b SqlAuthBackend, e e
 	if err != nil {
 		return b, mksqlerror(err.Error())
 	}
+
+	return b, nil
 }
 
-func NewSqlAuthBackendWithDBConn(db *sql.DB, isPostgres bool) (b SqlAuthBackend, e error) {
+func NewSqlAuthBackendWithDBConn(db *sql.DB, isPostgres bool) (b SqlAuthBackend, err error) {
 	b.db = db
 	_, err = db.Exec(`create table if not exists goauth (Username varchar(255), Email varchar(255), Hash varchar(255), Role varchar(255), primary key (Username))`)
 	if err != nil {
@@ -123,6 +125,7 @@ func setupPreparedStmts(b *SqlAuthBackend, db *sql.DB, isPostgres bool) (err err
 			return mksqlerror(fmt.Sprintf("deletestmt: %v", err))
 		}
 	}
+	return nil
 }
 
 // User returns the user with the given username. Error is set to
